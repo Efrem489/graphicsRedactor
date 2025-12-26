@@ -1,10 +1,12 @@
-﻿using System.Windows;
+﻿using System.Collections.Generic;
+using System.Linq;
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
-using Microsoft.Win32;
 using VectorEditor.Services;
+using VectorLine = VectorEditor.Shapes.Line;
 
 namespace VectorEditor
 {
@@ -14,10 +16,9 @@ namespace VectorEditor
     /// </summary>
     public partial class MainWindow : Window
     {
-        private readonly List<BrokenLineData> _drawingData = new List<BrokenLineData>();
-        private readonly IFileService _fileService;
-        private BrokenLineData? _selectedData;
-        private Polyline? _selectedPolyline;
+        private readonly List<VectorLine> _lines = new List<VectorLine>();
+        private readonly IVectorDrawingStorageService _storageService;
+        private VectorLine? _selectedLine;
         private readonly List<Ellipse> _handles = new List<Ellipse>();
         private bool _isCreatingLine;
         private bool _isDraggingWhole;
@@ -35,7 +36,7 @@ namespace VectorEditor
         public MainWindow()
         {
             InitializeComponent();
-            _fileService = new XmlFileService();
+            _storageService = new XmlVectorDrawingStorageService();
             colorComboBox.SelectedIndex = 0;
         }
 
@@ -61,100 +62,85 @@ namespace VectorEditor
         /// <param name="e">Данные события.</param>
         private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedData != null && _selectedPolyline != null)
-            {
-                _drawingData.Remove(_selectedData);
-                drawingCanvas.Children.Remove(_selectedPolyline);
-                DeselectCurrent();
-            }
+            if (_selectedLine == null)
+                return;
+
+            _lines.Remove(_selectedLine);
+            drawingCanvas.Children.Remove(_selectedLine.Polyline);
+            DeselectCurrent();
         }
 
         /// <summary>
         /// Обработчик события нажатия кнопки сохранения файла.
-        /// Открывает диалог сохранения и сохраняет все линии в XML файл через файловый сервис.
+        /// Сохраняет все линии через сервис хранения данных.
         /// </summary>
         /// <param name="sender">Источник события.</param>
         /// <param name="e">Данные события.</param>
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            var saveDialog = new SaveFileDialog { Filter = "XML Files (*.xml)|*.xml" };
-            if (saveDialog.ShowDialog() == true)
-            {
-                try
-                {
-                    _fileService.Save(_drawingData, saveDialog.FileName);
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка сохранения файла: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
-            }
+            var data = _lines.Select(line => line.Data).ToList();
+            _storageService.Save(data);
         }
 
         /// <summary>
         /// Обработчик события нажатия кнопки загрузки файла.
-        /// Открывает диалог выбора файла и загружает линии из XML файла через файловый сервис.
+        /// Загружает линии из файла через сервис хранения данных.
         /// </summary>
         /// <param name="sender">Источник события.</param>
         /// <param name="e">Данные события.</param>
         private void LoadButton_Click(object sender, RoutedEventArgs e)
         {
-            var openDialog = new OpenFileDialog { Filter = "XML Files (*.xml)|*.xml" };
-            if (openDialog.ShowDialog() == true)
+            var loadedData = _storageService.Load();
+            if (loadedData == null)
+                return;
+
+            drawingCanvas.Children.Clear();
+            _lines.Clear();
+            
+            foreach (var data in loadedData)
             {
-                try
-                {
-                    var loadedData = _fileService.Load(openDialog.FileName);
-                    drawingCanvas.Children.Clear();
-                    _drawingData.Clear();
-                    _drawingData.AddRange(loadedData);
-                    foreach (var data in _drawingData)
-                    {
-                        CreatePolylineUI(data);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    MessageBox.Show($"Ошибка загрузки файла: {ex.Message}", "Ошибка", MessageBoxButton.OK, MessageBoxImage.Error);
-                }
+                var line = new VectorLine(data);
+                _lines.Add(line);
+                drawingCanvas.Children.Add(line.Polyline);
             }
         }
 
         /// <summary>
         /// Обработчик события изменения значения слайдера толщины линии.
-        /// Обновляет толщину выбранной линии в данных и на холсте.
+        /// Обновляет толщину выбранной линии.
         /// </summary>
         /// <param name="sender">Источник события.</param>
         /// <param name="e">Данные события, содержащие новое значение.</param>
         private void ThicknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_selectedData != null && _selectedPolyline != null)
-            {
-                _selectedData.Thickness = e.NewValue;
-                _selectedPolyline.StrokeThickness = e.NewValue;
-            }
+            if (_selectedLine == null)
+                return;
+
+            _selectedLine.SetThickness(e.NewValue);
         }
 
         /// <summary>
         /// Обработчик события изменения выбора цвета в комбобоксе.
-        /// Обновляет цвет выбранной линии в данных и на холсте.
+        /// Обновляет цвет выбранной линии.
         /// </summary>
         /// <param name="sender">Источник события.</param>
         /// <param name="e">Данные события изменения выбора.</param>
         private void ColorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_selectedData != null && _selectedPolyline != null && colorComboBox.SelectedItem is ComboBoxItem item && item.Tag is string colorString)
+            if (_selectedLine == null)
+                return;
+
+            if (colorComboBox.SelectedItem is not ComboBoxItem item || item.Tag is not string colorString)
+                return;
+
+            try
             {
-                try
-                {
-                    var color = (Color)ColorConverter.ConvertFromString(colorString);
-                    _selectedData.StrokeColor = color;
-                    _selectedPolyline.Stroke = new SolidColorBrush(color);
-                }
-                catch
-                {
-                    // Игнорируем ошибку преобразования цвета
-                }
+                var color = (Color)ColorConverter.ConvertFromString(colorString);
+                _selectedLine.SetColor(color);
+            }
+            catch
+            {
+                // Игнорируем ошибку преобразования цвета
             }
         }
 
@@ -193,10 +179,10 @@ namespace VectorEditor
         /// <param name="currentPosition">Текущая позиция курсора мыши.</param>
         private void UpdatePreview(Point currentPosition)
         {
-            if (_previewPolyline != null && _previewPolyline.Points.Count == 2)
-            {
-                _previewPolyline.Points[1] = currentPosition;
-            }
+            if (_previewPolyline == null || _previewPolyline.Points.Count != 2)
+                return;
+
+            _previewPolyline.Points[1] = currentPosition;
         }
 
         /// <summary>
@@ -209,11 +195,13 @@ namespace VectorEditor
                 drawingCanvas.Children.Remove(_previewHandle);
                 _previewHandle = null;
             }
+            
             if (_previewPolyline != null && drawingCanvas.Children.Contains(_previewPolyline))
             {
                 drawingCanvas.Children.Remove(_previewPolyline);
                 _previewPolyline = null;
             }
+            
             _isInPreviewMode = false;
         }
 
@@ -235,60 +223,25 @@ namespace VectorEditor
                     e.Handled = true;
                     return;
                 }
-                else
+
+                var newData = new BrokenLineData
                 {
-                    var newData = new BrokenLineData
-                    {
-                        Points = new List<Point> { _firstPoint, position },
-                        Thickness = thicknessSlider.Value,
-                        StrokeColor = GetSelectedColor()
-                    };
-                    _drawingData.Add(newData);
-                    var polyline = CreatePolylineUI(newData);
-                    SelectLine(newData, polyline);
-                    ClearPreview();
-                    _isCreatingLine = false;
-                    e.Handled = true;
-                    return;
-                }
+                    Points = new List<Point> { _firstPoint, position },
+                    Thickness = thicknessSlider.Value,
+                    StrokeColor = GetSelectedColor()
+                };
+                var line = new VectorLine(newData);
+                _lines.Add(line);
+                drawingCanvas.Children.Add(line.Polyline);
+                SelectLine(line);
+                ClearPreview();
+                _isCreatingLine = false;
+                e.Handled = true;
+                return;
             }
 
             var hitResult = VisualTreeHelper.HitTest(drawingCanvas, position);
-            if (hitResult?.VisualHit != null)
-            {
-                if (hitResult.VisualHit is Ellipse handle)
-                {
-                    _isDraggingPoint = true;
-                    _draggingPointIndex = _handles.IndexOf(handle);
-                    _dragStartPosition = position;
-                    handle.CaptureMouse();
-                    e.Handled = true;
-                    return;
-                }
-                else if (hitResult.VisualHit is Polyline polyline)
-                {
-                    var data = _drawingData.FirstOrDefault(d => polyline.Points.SequenceEqual(d.Points));
-                    if (data != null)
-                    {
-                        if (e.ClickCount == 2)
-                        {
-                            InsertPointOnLine(data, polyline, position);
-                            UpdateHandles();
-                            e.Handled = true;
-                            return;
-                        }
-                        else
-                        {
-                            SelectLine(data, polyline);
-                            _isDraggingWhole = true;
-                            _dragStartPosition = position;
-                            polyline.CaptureMouse();
-                            e.Handled = true;
-                        }
-                    }
-                }
-            }
-            else
+            if (hitResult?.VisualHit == null)
             {
                 DeselectCurrent();
                 if (_isCreatingLine)
@@ -296,6 +249,38 @@ namespace VectorEditor
                     ClearPreview();
                     _isCreatingLine = false;
                 }
+                return;
+            }
+
+            if (hitResult.VisualHit is Ellipse handle)
+            {
+                _isDraggingPoint = true;
+                _draggingPointIndex = _handles.IndexOf(handle);
+                _dragStartPosition = position;
+                handle.CaptureMouse();
+                e.Handled = true;
+                return;
+            }
+
+            if (hitResult.VisualHit is Polyline polyline)
+            {
+                var line = _lines.FirstOrDefault(l => l.MatchesPolyline(polyline));
+                if (line == null)
+                    return;
+
+                if (e.ClickCount == 2)
+                {
+                    line.InsertPoint(position);
+                    UpdateHandles();
+                    e.Handled = true;
+                    return;
+                }
+
+                SelectLine(line);
+                _isDraggingWhole = true;
+                _dragStartPosition = position;
+                polyline.CaptureMouse();
+                e.Handled = true;
             }
         }
 
@@ -312,35 +297,30 @@ namespace VectorEditor
             if (_isInPreviewMode)
             {
                 UpdatePreview(position);
+                return;
             }
 
-            if (_isDraggingPoint && _selectedData != null && _selectedPolyline != null && _draggingPointIndex >= 0 && _draggingPointIndex < _selectedData.Points.Count)
+            if (_isDraggingPoint && _selectedLine != null && _draggingPointIndex >= 0 && _draggingPointIndex < _selectedLine.Data.Points.Count)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
-                var point = _selectedData.Points[_draggingPointIndex] + delta;
-                _selectedData.Points[_draggingPointIndex] = point;
-                _selectedPolyline.Points[_draggingPointIndex] = point;
+                var newPoint = _selectedLine.Data.Points[_draggingPointIndex] + delta;
+                _selectedLine.MovePoint(_draggingPointIndex, newPoint);
+
                 if (_draggingPointIndex < _handles.Count)
                 {
                     var handle = _handles[_draggingPointIndex];
-                    Canvas.SetLeft(handle, point.X - 4);
-                    Canvas.SetTop(handle, point.Y - 4);
+                    Canvas.SetLeft(handle, newPoint.X - 4);
+                    Canvas.SetTop(handle, newPoint.Y - 4);
                 }
                 _dragStartPosition = position;
+                return;
             }
-            else if (_isDraggingWhole && _selectedData != null && _selectedPolyline != null)
+
+            if (_isDraggingWhole && _selectedLine != null)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
-                int count = Math.Min(_selectedData.Points.Count, Math.Min(_selectedPolyline.Points.Count, _handles.Count));
-                for (int i = 0; i < count; i++)
-                {
-                    var point = _selectedData.Points[i] + delta;
-                    _selectedData.Points[i] = point;
-                    _selectedPolyline.Points[i] = point;
-                    var handle = _handles[i];
-                    Canvas.SetLeft(handle, point.X - 4);
-                    Canvas.SetTop(handle, point.Y - 4);
-                }
+                _selectedLine.MoveAll(delta);
+                UpdateHandlesPositions();
                 _dragStartPosition = position;
             }
         }
@@ -356,60 +336,46 @@ namespace VectorEditor
             if (_isDraggingPoint)
             {
                 _isDraggingPoint = false;
-                if (_draggingPointIndex >= 0 && _handles.Count > _draggingPointIndex)
+                if (_draggingPointIndex >= 0 && _draggingPointIndex < _handles.Count)
                     _handles[_draggingPointIndex].ReleaseMouseCapture();
                 _draggingPointIndex = -1;
+                return;
             }
-            else if (_isDraggingWhole)
+
+            if (_isDraggingWhole)
             {
                 _isDraggingWhole = false;
-                _selectedPolyline?.ReleaseMouseCapture();
+                _selectedLine?.Polyline.ReleaseMouseCapture();
             }
-        }
-
-        /// <summary>
-        /// Создает визуальный элемент Polyline на основе данных линии и добавляет его на холст.
-        /// </summary>
-        /// <param name="data">Данные ломаной линии для визуализации.</param>
-        /// <returns>Созданный визуальный элемент Polyline.</returns>
-        private Polyline CreatePolylineUI(BrokenLineData data)
-        {
-            var polyline = new Polyline
-            {
-                Points = new PointCollection(data.Points),
-                StrokeThickness = data.Thickness,
-                Stroke = new SolidColorBrush(data.StrokeColor)
-            };
-            drawingCanvas.Children.Add(polyline);
-            return polyline;
         }
 
         /// <summary>
         /// Выбирает линию для редактирования, обновляя UI элементы управления в соответствии с выбранной линией.
         /// </summary>
-        /// <param name="data">Данные выбранной линии.</param>
-        /// <param name="polyline">Визуальный элемент выбранной линии.</param>
-        private void SelectLine(BrokenLineData data, Polyline polyline)
+        /// <param name="line">Линия для выбора.</param>
+        private void SelectLine(VectorLine line)
         {
             DeselectCurrent();
-            _selectedData = data;
-            _selectedPolyline = polyline;
-            thicknessSlider.Value = data.Thickness;
+            _selectedLine = line;
+            thicknessSlider.Value = line.Data.Thickness;
 
             foreach (ComboBoxItem item in colorComboBox.Items)
             {
-                if (item.Tag is string tagColorStr)
+                if (item.Tag is not string tagColorStr)
+                    continue;
+
+                try
                 {
-                    try
+                    var tagColor = (Color)ColorConverter.ConvertFromString(tagColorStr);
+                    if (tagColor == line.Data.StrokeColor)
                     {
-                        var tagColor = (Color)ColorConverter.ConvertFromString(tagColorStr);
-                        if (tagColor == data.StrokeColor)
-                        {
-                            colorComboBox.SelectedItem = item;
-                            break;
-                        }
+                        colorComboBox.SelectedItem = item;
+                        break;
                     }
-                    catch { /* игнорируем ошибку преобразования цвета */ }
+                }
+                catch
+                {
+                    // Игнорируем ошибку преобразования цвета
                 }
             }
             UpdateHandles();
@@ -420,8 +386,7 @@ namespace VectorEditor
         /// </summary>
         private void DeselectCurrent()
         {
-            _selectedData = null;
-            _selectedPolyline = null;
+            _selectedLine = null;
             ClearHandles();
         }
 
@@ -432,9 +397,11 @@ namespace VectorEditor
         private void UpdateHandles()
         {
             ClearHandles();
-            if (_selectedData == null) return;
+            if (_selectedLine == null)
+                return;
+
             int index = 0;
-            foreach (var point in _selectedData.Points)
+            foreach (var point in _selectedLine.Data.Points)
             {
                 var handle = new Ellipse
                 {
@@ -451,6 +418,23 @@ namespace VectorEditor
         }
 
         /// <summary>
+        /// Обновляет позиции маркеров редактирования в соответствии с текущими позициями точек выбранной линии.
+        /// </summary>
+        private void UpdateHandlesPositions()
+        {
+            if (_selectedLine == null)
+                return;
+
+            for (int i = 0; i < _selectedLine.Data.Points.Count && i < _handles.Count; i++)
+            {
+                var point = _selectedLine.Data.Points[i];
+                var handle = _handles[i];
+                Canvas.SetLeft(handle, point.X - 4);
+                Canvas.SetTop(handle, point.Y - 4);
+            }
+        }
+
+        /// <summary>
         /// Удаляет все маркеры редактирования (ручки) с холста.
         /// </summary>
         private void ClearHandles()
@@ -461,79 +445,22 @@ namespace VectorEditor
         }
 
         /// <summary>
-        /// Вставляет новую точку в линию в позиции, ближайшей к точке клика.
-        /// Ищет ближайший сегмент линии и вставляет точку проекции клика на этот сегмент.
-        /// </summary>
-        /// <param name="data">Данные линии, в которую вставляется точка.</param>
-        /// <param name="polyline">Визуальный элемент линии.</param>
-        /// <param name="clickPosition">Позиция клика мыши.</param>
-        private void InsertPointOnLine(BrokenLineData data, Polyline polyline, Point clickPosition)
-        {
-            double minDistance = double.MaxValue;
-            int insertIndex = -1;
-            Point insertPoint = default;
-
-            for (int i = 0; i < data.Points.Count - 1; i++)
-            {
-                var p1 = data.Points[i];
-                var p2 = data.Points[i + 1];
-                var projection = ProjectPointOnSegment(clickPosition, p1, p2);
-                var distance = (clickPosition - projection).Length;
-
-                if (distance < minDistance)
-                {
-                    minDistance = distance;
-                    insertIndex = i + 1;
-                    insertPoint = projection;
-                }
-            }
-
-            if (insertIndex != -1 && minDistance < 10)
-            {
-                data.Points.Insert(insertIndex, insertPoint);
-                polyline.Points = new PointCollection(data.Points);
-
-                if (_selectedData == data && _selectedPolyline == polyline)
-                {
-                    UpdateHandles();
-                }
-            }
-        }
-
-        /// <summary>
-        /// Проецирует точку на отрезок, находя ближайшую точку на отрезке к заданной точке.
-        /// </summary>
-        /// <param name="p">Точка для проецирования.</param>
-        /// <param name="a">Начальная точка отрезка.</param>
-        /// <param name="b">Конечная точка отрезка.</param>
-        /// <returns>Точка проекции на отрезке.</returns>
-        private Point ProjectPointOnSegment(Point p, Point a, Point b)
-        {
-            var ab = b - a;
-            var ap = p - a;
-            double projLength = Vector.Multiply(ab, ap) / ab.LengthSquared;
-            projLength = Math.Clamp(projLength, 0, 1);
-            return a + ab * projLength;
-        }
-
-        /// <summary>
         /// Получает выбранный цвет из комбобокса цветов.
         /// </summary>
         /// <returns>Выбранный цвет или черный цвет по умолчанию, если цвет не может быть определен.</returns>
         private Color GetSelectedColor()
         {
-            if (colorComboBox.SelectedItem is ComboBoxItem item && item.Tag is string colorString)
+            if (colorComboBox.SelectedItem is not ComboBoxItem item || item.Tag is not string colorString)
+                return Colors.Black;
+
+            try
             {
-                try
-                {
-                    return (Color)ColorConverter.ConvertFromString(colorString);
-                }
-                catch
-                {
-                    return Colors.Black;
-                }
+                return (Color)ColorConverter.ConvertFromString(colorString);
             }
-            return Colors.Black;
+            catch
+            {
+                return Colors.Black;
+            }
         }
     }
 }
