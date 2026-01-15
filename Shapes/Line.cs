@@ -12,20 +12,24 @@ namespace VectorEditor.Shapes
     /// Представляет ломаную линию в векторном редакторе.
     /// Инкапсулирует данные линии и её визуальное представление.
     /// </summary>
-    public class Line
+    public class Line : Figure
     {
         private readonly BrokenLineData _data;
-        private Polyline _polyline;
+        private readonly Polyline _polyline;
+
+        /// <inheritdoc />
+        public override Shape Visual => _polyline;
+
+        /// <inheritdoc />
+        public override double Thickness => _data.Thickness;
+
+        /// <inheritdoc />
+        public override Color StrokeColor => _data.StrokeColor;
 
         /// <summary>
         /// Получает данные линии.
         /// </summary>
         public BrokenLineData Data => _data;
-
-        /// <summary>
-        /// Получает визуальный элемент линии.
-        /// </summary>
-        public Polyline Polyline => _polyline;
 
         /// <summary>
         /// Инициализирует новый экземпляр класса Line на основе данных.
@@ -37,32 +41,25 @@ namespace VectorEditor.Shapes
             _polyline = CreatePolyline();
         }
 
-        /// <summary>
-        /// Обновляет толщину линии.
-        /// </summary>
-        /// <param name="thickness">Новая толщина линии.</param>
-        public void SetThickness(double thickness)
+        /// <inheritdoc />
+        public override IReadOnlyList<Point> GetPoints() => _data.Points;
+
+        /// <inheritdoc />
+        public override void SetThickness(double thickness)
         {
             _data.Thickness = thickness;
             _polyline.StrokeThickness = thickness;
         }
 
-        /// <summary>
-        /// Обновляет цвет линии.
-        /// </summary>
-        /// <param name="color">Новый цвет линии.</param>
-        public void SetColor(Color color)
+        /// <inheritdoc />
+        public override void SetColor(Color color)
         {
             _data.StrokeColor = color;
             _polyline.Stroke = new SolidColorBrush(color);
         }
 
-        /// <summary>
-        /// Перемещает точку линии по указанному индексу.
-        /// </summary>
-        /// <param name="pointIndex">Индекс точки для перемещения.</param>
-        /// <param name="newPosition">Новая позиция точки.</param>
-        public void MovePoint(int pointIndex, Point newPosition)
+        /// <inheritdoc />
+        public override void MovePoint(int pointIndex, Point newPosition)
         {
             if (pointIndex < 0 || pointIndex >= _data.Points.Count)
                 return;
@@ -71,11 +68,8 @@ namespace VectorEditor.Shapes
             _polyline.Points[pointIndex] = newPosition;
         }
 
-        /// <summary>
-        /// Перемещает всю линию на указанное смещение.
-        /// </summary>
-        /// <param name="offset">Смещение для перемещения всех точек линии.</param>
-        public void MoveAll(Vector offset)
+        /// <inheritdoc />
+        public override void MoveAll(Vector offset)
         {
             for (int i = 0; i < _data.Points.Count; i++)
             {
@@ -85,13 +79,8 @@ namespace VectorEditor.Shapes
             }
         }
 
-        /// <summary>
-        /// Вставляет точку в линию в позиции, ближайшей к указанной точке клика.
-        /// </summary>
-        /// <param name="clickPosition">Позиция клика мыши.</param>
-        /// <param name="maxDistance">Максимальное расстояние для вставки точки.</param>
-        /// <returns>true, если точка была успешно вставлена; иначе false.</returns>
-        public bool InsertPoint(Point clickPosition, double maxDistance = 10)
+        /// <inheritdoc />
+        public override bool InsertPoint(Point clickPosition, double maxDistance = 10)
         {
             double minDistance = double.MaxValue;
             int insertIndex = -1;
@@ -122,14 +111,13 @@ namespace VectorEditor.Shapes
             return false;
         }
 
-        /// <summary>
-        /// Проверяет, соответствует ли визуальный элемент данной линии.
-        /// </summary>
-        /// <param name="polyline">Визуальный элемент для проверки.</param>
-        /// <returns>true, если визуальный элемент соответствует данной линии; иначе false.</returns>
-        public bool MatchesPolyline(Polyline polyline)
+        /// <inheritdoc />
+        public override bool MatchesShape(Shape shape)
         {
-            return _polyline == polyline || _polyline.Points.SequenceEqual(polyline.Points);
+            if (shape is not Polyline polyline)
+                return false;
+
+            return ReferenceEquals(_polyline, polyline) || _polyline.Points.SequenceEqual(polyline.Points);
         }
 
         /// <summary>

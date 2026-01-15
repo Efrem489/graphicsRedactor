@@ -1,11 +1,12 @@
-﻿using System.Collections.Generic;
-using System.Linq;
-using System.Windows;
+﻿using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Shapes;
+using System.Collections.Generic;
+using System.Linq;
 using VectorEditor.Services;
+using VectorEditor.Shapes;
 using VectorLine = VectorEditor.Shapes.Line;
 
 namespace VectorEditor
@@ -16,9 +17,9 @@ namespace VectorEditor
     /// </summary>
     public partial class MainWindow : Window
     {
-        private readonly List<VectorLine> _lines = new List<VectorLine>();
+        private readonly List<Figure> _figures = new List<Figure>();
         private readonly IVectorDrawingStorageService _storageService;
-        private VectorLine? _selectedLine;
+        private Figure? _selectedFigure;
         private readonly List<Ellipse> _handles = new List<Ellipse>();
         private bool _isCreatingLine;
         private bool _isDraggingWhole;
@@ -62,11 +63,11 @@ namespace VectorEditor
         /// <param name="e">Данные события.</param>
         private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e)
         {
-            if (_selectedLine == null)
+            if (_selectedFigure == null)
                 return;
 
-            _lines.Remove(_selectedLine);
-            drawingCanvas.Children.Remove(_selectedLine.Polyline);
+            _figures.Remove(_selectedFigure);
+            drawingCanvas.Children.Remove(_selectedFigure.Visual);
             DeselectCurrent();
         }
 
@@ -78,7 +79,10 @@ namespace VectorEditor
         /// <param name="e">Данные события.</param>
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
-            var data = _lines.Select(line => line.Data).ToList();
+            var data = _figures
+                .OfType<VectorLine>()
+                .Select(line => line.Data)
+                .ToList();
             _storageService.Save(data);
         }
 
@@ -95,13 +99,13 @@ namespace VectorEditor
                 return;
 
             drawingCanvas.Children.Clear();
-            _lines.Clear();
+            _figures.Clear();
             
             foreach (var data in loadedData)
             {
                 var line = new VectorLine(data);
-                _lines.Add(line);
-                drawingCanvas.Children.Add(line.Polyline);
+                _figures.Add(line);
+                drawingCanvas.Children.Add(line.Visual);
             }
         }
 
@@ -113,10 +117,10 @@ namespace VectorEditor
         /// <param name="e">Данные события, содержащие новое значение.</param>
         private void ThicknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_selectedLine == null)
+            if (_selectedFigure == null)
                 return;
 
-            _selectedLine.SetThickness(e.NewValue);
+            _selectedFigure.SetThickness(e.NewValue);
         }
 
         /// <summary>
@@ -127,7 +131,7 @@ namespace VectorEditor
         /// <param name="e">Данные события изменения выбора.</param>
         private void ColorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            if (_selectedLine == null)
+            if (_selectedFigure == null)
                 return;
 
             if (colorComboBox.SelectedItem is not ComboBoxItem item || item.Tag is not string colorString)
@@ -136,7 +140,7 @@ namespace VectorEditor
             try
             {
                 var color = (Color)ColorConverter.ConvertFromString(colorString);
-                _selectedLine.SetColor(color);
+                _selectedFigure.SetColor(color);
             }
             catch
             {
@@ -231,9 +235,9 @@ namespace VectorEditor
                     StrokeColor = GetSelectedColor()
                 };
                 var line = new VectorLine(newData);
-                _lines.Add(line);
-                drawingCanvas.Children.Add(line.Polyline);
-                SelectLine(line);
+                _figures.Add(line);
+                drawingCanvas.Children.Add(line.Visual);
+                SelectFigure(line);
                 ClearPreview();
                 _isCreatingLine = false;
                 e.Handled = true;
@@ -264,19 +268,19 @@ namespace VectorEditor
 
             if (hitResult.VisualHit is Polyline polyline)
             {
-                var line = _lines.FirstOrDefault(l => l.MatchesPolyline(polyline));
-                if (line == null)
+                var figure = _figures.FirstOrDefault(f => f.MatchesShape(polyline));
+                if (figure == null)
                     return;
 
                 if (e.ClickCount == 2)
                 {
-                    line.InsertPoint(position);
+                    figure.InsertPoint(position);
                     UpdateHandles();
                     e.Handled = true;
                     return;
                 }
 
-                SelectLine(line);
+                SelectFigure(figure);
                 _isDraggingWhole = true;
                 _dragStartPosition = position;
                 polyline.CaptureMouse();
@@ -300,11 +304,12 @@ namespace VectorEditor
                 return;
             }
 
-            if (_isDraggingPoint && _selectedLine != null && _draggingPointIndex >= 0 && _draggingPointIndex < _selectedLine.Data.Points.Count)
+            if (_isDraggingPoint && _selectedFigure != null && _draggingPointIndex >= 0 && _draggingPointIndex < _selectedFigure.GetPoints().Count)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
-                var newPoint = _selectedLine.Data.Points[_draggingPointIndex] + delta;
-                _selectedLine.MovePoint(_draggingPointIndex, newPoint);
+                var currentPoints = _selectedFigure.GetPoints();
+                var newPoint = currentPoints[_draggingPointIndex] + delta;
+                _selectedFigure.MovePoint(_draggingPointIndex, newPoint);
 
                 if (_draggingPointIndex < _handles.Count)
                 {
@@ -316,10 +321,10 @@ namespace VectorEditor
                 return;
             }
 
-            if (_isDraggingWhole && _selectedLine != null)
+            if (_isDraggingWhole && _selectedFigure != null)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
-                _selectedLine.MoveAll(delta);
+                _selectedFigure?.MoveAll(delta);
                 UpdateHandlesPositions();
                 _dragStartPosition = position;
             }
@@ -345,19 +350,22 @@ namespace VectorEditor
             if (_isDraggingWhole)
             {
                 _isDraggingWhole = false;
-                _selectedLine?.Polyline.ReleaseMouseCapture();
+                if (_selectedFigure?.Visual is UIElement element)
+                {
+                    element.ReleaseMouseCapture();
+                }
             }
         }
 
         /// <summary>
         /// Выбирает линию для редактирования, обновляя UI элементы управления в соответствии с выбранной линией.
         /// </summary>
-        /// <param name="line">Линия для выбора.</param>
-        private void SelectLine(VectorLine line)
+        /// <param name="figure">Фигура для выбора.</param>
+        private void SelectFigure(Figure figure)
         {
             DeselectCurrent();
-            _selectedLine = line;
-            thicknessSlider.Value = line.Data.Thickness;
+            _selectedFigure = figure;
+            thicknessSlider.Value = figure.Thickness;
 
             foreach (ComboBoxItem item in colorComboBox.Items)
             {
@@ -367,7 +375,7 @@ namespace VectorEditor
                 try
                 {
                     var tagColor = (Color)ColorConverter.ConvertFromString(tagColorStr);
-                    if (tagColor == line.Data.StrokeColor)
+                    if (tagColor == figure.StrokeColor)
                     {
                         colorComboBox.SelectedItem = item;
                         break;
@@ -386,7 +394,7 @@ namespace VectorEditor
         /// </summary>
         private void DeselectCurrent()
         {
-            _selectedLine = null;
+            _selectedFigure = null;
             ClearHandles();
         }
 
@@ -397,11 +405,11 @@ namespace VectorEditor
         private void UpdateHandles()
         {
             ClearHandles();
-            if (_selectedLine == null)
+            if (_selectedFigure == null)
                 return;
 
             int index = 0;
-            foreach (var point in _selectedLine.Data.Points)
+            foreach (var point in _selectedFigure.GetPoints())
             {
                 var handle = new Ellipse
                 {
@@ -422,12 +430,13 @@ namespace VectorEditor
         /// </summary>
         private void UpdateHandlesPositions()
         {
-            if (_selectedLine == null)
+            if (_selectedFigure == null)
                 return;
 
-            for (int i = 0; i < _selectedLine.Data.Points.Count && i < _handles.Count; i++)
+            var points = _selectedFigure.GetPoints();
+            for (int i = 0; i < points.Count && i < _handles.Count; i++)
             {
-                var point = _selectedLine.Data.Points[i];
+                var point = points[i];
                 var handle = _handles[i];
                 Canvas.SetLeft(handle, point.X - 4);
                 Canvas.SetTop(handle, point.Y - 4);
