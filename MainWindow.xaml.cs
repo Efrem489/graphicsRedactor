@@ -31,9 +31,6 @@ namespace VectorEditor
         private Point _firstPoint;
         private bool _isInPreviewMode;
 
-        /// <summary>
-        /// Инициализирует новый экземпляр класса MainWindow.
-        /// </summary>
         public MainWindow()
         {
             InitializeComponent();
@@ -41,12 +38,6 @@ namespace VectorEditor
             colorComboBox.SelectedIndex = 0;
         }
 
-        /// <summary>
-        /// Обработчик события нажатия кнопки создания линии.
-        /// Активирует режим создания новой ломаной линии.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события.</param>
         private void CreateLineButton_Click(object sender, RoutedEventArgs e)
         {
             _isCreatingLine = true;
@@ -55,12 +46,6 @@ namespace VectorEditor
             ClearPreview();
         }
 
-        /// <summary>
-        /// Обработчик события нажатия кнопки удаления выбранной линии.
-        /// Удаляет выбранную линию из коллекции данных и с холста.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события.</param>
         private void DeleteSelectedButton_Click(object sender, RoutedEventArgs e)
         {
             if (_selectedFigure == null)
@@ -71,27 +56,16 @@ namespace VectorEditor
             DeselectCurrent();
         }
 
-        /// <summary>
-        /// Обработчик события нажатия кнопки сохранения файла.
-        /// Сохраняет все линии через сервис хранения данных.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события.</param>
         private void SaveButton_Click(object sender, RoutedEventArgs e)
         {
+            // Преобразуем фигуры в их данные
             var data = _figures
-                .OfType<VectorLine>()
-                .Select(line => line.Data)
+                .Select(f => f.GetData())
                 .ToList();
+
             _storageService.Save(data);
         }
 
-        /// <summary>
-        /// Обработчик события нажатия кнопки загрузки файла.
-        /// Загружает линии из файла через сервис хранения данных.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события.</param>
         private void LoadButton_Click(object sender, RoutedEventArgs e)
         {
             var loadedData = _storageService.Load();
@@ -100,35 +74,21 @@ namespace VectorEditor
 
             drawingCanvas.Children.Clear();
             _figures.Clear();
-            
+
             foreach (var data in loadedData)
             {
-                var line = new VectorLine(data);
-                _figures.Add(line);
-                drawingCanvas.Children.Add(line.Visual);
+                // Используем фабрику для создания фигуры
+                var figure = FigureFactory.CreateFigure(data);
+                _figures.Add(figure);
+                drawingCanvas.Children.Add(figure.Visual);
             }
         }
 
-        /// <summary>
-        /// Обработчик события изменения значения слайдера толщины линии.
-        /// Обновляет толщину выбранной линии.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события, содержащие новое значение.</param>
         private void ThicknessSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
         {
-            if (_selectedFigure == null)
-                return;
-
-            _selectedFigure.SetThickness(e.NewValue);
+            _selectedFigure?.SetThickness(e.NewValue);
         }
 
-        /// <summary>
-        /// Обработчик события изменения выбора цвета в комбобоксе.
-        /// Обновляет цвет выбранной линии.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события изменения выбора.</param>
         private void ColorComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
             if (_selectedFigure == null)
@@ -148,11 +108,6 @@ namespace VectorEditor
             }
         }
 
-        /// <summary>
-        /// Начинает режим предпросмотра новой линии.
-        /// Создает предварительный вид линии и маркер начальной точки.
-        /// </summary>
-        /// <param name="position">Позиция начальной точки линии.</param>
         private void StartPreview(Point position)
         {
             _isInPreviewMode = true;
@@ -177,10 +132,6 @@ namespace VectorEditor
             drawingCanvas.Children.Add(_previewPolyline);
         }
 
-        /// <summary>
-        /// Обновляет предпросмотр линии в соответствии с текущей позицией курсора.
-        /// </summary>
-        /// <param name="currentPosition">Текущая позиция курсора мыши.</param>
         private void UpdatePreview(Point currentPosition)
         {
             if (_previewPolyline == null || _previewPolyline.Points.Count != 2)
@@ -189,9 +140,6 @@ namespace VectorEditor
             _previewPolyline.Points[1] = currentPosition;
         }
 
-        /// <summary>
-        /// Очищает предпросмотр линии, удаляя предварительные элементы с холста.
-        /// </summary>
         private void ClearPreview()
         {
             if (_previewHandle != null && drawingCanvas.Children.Contains(_previewHandle))
@@ -199,22 +147,16 @@ namespace VectorEditor
                 drawingCanvas.Children.Remove(_previewHandle);
                 _previewHandle = null;
             }
-            
+
             if (_previewPolyline != null && drawingCanvas.Children.Contains(_previewPolyline))
             {
                 drawingCanvas.Children.Remove(_previewPolyline);
                 _previewPolyline = null;
             }
-            
+
             _isInPreviewMode = false;
         }
 
-        /// <summary>
-        /// Обработчик события нажатия левой кнопки мыши на холсте.
-        /// Обрабатывает создание новой линии, выбор существующей линии, начало перетаскивания точки или линии.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события мыши.</param>
         private void DrawingCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
         {
             var position = e.GetPosition(drawingCanvas);
@@ -228,13 +170,16 @@ namespace VectorEditor
                     return;
                 }
 
-                var newData = new BrokenLineData
+                // Создаем данные для линии
+                var lineData = new BrokenLineData
                 {
                     Points = new List<Point> { _firstPoint, position },
                     Thickness = thicknessSlider.Value,
                     StrokeColor = GetSelectedColor()
                 };
-                var line = new VectorLine(newData);
+
+                // Создаем фигуру через фабрику
+                var line = FigureFactory.CreateFigure(lineData);
                 _figures.Add(line);
                 drawingCanvas.Children.Add(line.Visual);
                 SelectFigure(line);
@@ -266,9 +211,9 @@ namespace VectorEditor
                 return;
             }
 
-            if (hitResult.VisualHit is Polyline polyline)
+            if (hitResult.VisualHit is Shape shape)
             {
-                var figure = _figures.FirstOrDefault(f => f.MatchesShape(polyline));
+                var figure = _figures.FirstOrDefault(f => f.MatchesShape(shape));
                 if (figure == null)
                     return;
 
@@ -283,17 +228,11 @@ namespace VectorEditor
                 SelectFigure(figure);
                 _isDraggingWhole = true;
                 _dragStartPosition = position;
-                polyline.CaptureMouse();
+                shape.CaptureMouse();
                 e.Handled = true;
             }
         }
 
-        /// <summary>
-        /// Обработчик события перемещения мыши на холсте.
-        /// Обрабатывает обновление предпросмотра линии, перетаскивание точки или всей линии.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события мыши.</param>
         private void DrawingCanvas_MouseMove(object sender, MouseEventArgs e)
         {
             var position = e.GetPosition(drawingCanvas);
@@ -304,7 +243,8 @@ namespace VectorEditor
                 return;
             }
 
-            if (_isDraggingPoint && _selectedFigure != null && _draggingPointIndex >= 0 && _draggingPointIndex < _selectedFigure.GetPoints().Count)
+            if (_isDraggingPoint && _selectedFigure != null && _draggingPointIndex >= 0 &&
+                _draggingPointIndex < _selectedFigure.GetPoints().Count)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
                 var currentPoints = _selectedFigure.GetPoints();
@@ -324,18 +264,12 @@ namespace VectorEditor
             if (_isDraggingWhole && _selectedFigure != null)
             {
                 var delta = new Vector(position.X - _dragStartPosition.X, position.Y - _dragStartPosition.Y);
-                _selectedFigure?.MoveAll(delta);
+                _selectedFigure.MoveAll(delta);
                 UpdateHandlesPositions();
                 _dragStartPosition = position;
             }
         }
 
-        /// <summary>
-        /// Обработчик события отпускания левой кнопки мыши на холсте.
-        /// Завершает операцию перетаскивания точки или линии, освобождая захват мыши.
-        /// </summary>
-        /// <param name="sender">Источник события.</param>
-        /// <param name="e">Данные события мыши.</param>
         private void DrawingCanvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             if (_isDraggingPoint)
@@ -357,10 +291,6 @@ namespace VectorEditor
             }
         }
 
-        /// <summary>
-        /// Выбирает линию для редактирования, обновляя UI элементы управления в соответствии с выбранной линией.
-        /// </summary>
-        /// <param name="figure">Фигура для выбора.</param>
         private void SelectFigure(Figure figure)
         {
             DeselectCurrent();
@@ -389,19 +319,12 @@ namespace VectorEditor
             UpdateHandles();
         }
 
-        /// <summary>
-        /// Снимает выделение с текущей выбранной линии.
-        /// </summary>
         private void DeselectCurrent()
         {
             _selectedFigure = null;
             ClearHandles();
         }
 
-        /// <summary>
-        /// Обновляет маркеры редактирования (ручки) для выбранной линии.
-        /// Создает визуальные маркеры для каждой точки линии, позволяющие редактировать её форму.
-        /// </summary>
         private void UpdateHandles()
         {
             ClearHandles();
@@ -425,9 +348,6 @@ namespace VectorEditor
             }
         }
 
-        /// <summary>
-        /// Обновляет позиции маркеров редактирования в соответствии с текущими позициями точек выбранной линии.
-        /// </summary>
         private void UpdateHandlesPositions()
         {
             if (_selectedFigure == null)
@@ -443,9 +363,6 @@ namespace VectorEditor
             }
         }
 
-        /// <summary>
-        /// Удаляет все маркеры редактирования (ручки) с холста.
-        /// </summary>
         private void ClearHandles()
         {
             foreach (var handle in _handles)
@@ -453,10 +370,6 @@ namespace VectorEditor
             _handles.Clear();
         }
 
-        /// <summary>
-        /// Получает выбранный цвет из комбобокса цветов.
-        /// </summary>
-        /// <returns>Выбранный цвет или черный цвет по умолчанию, если цвет не может быть определен.</returns>
         private Color GetSelectedColor()
         {
             if (colorComboBox.SelectedItem is not ComboBoxItem item || item.Tag is not string colorString)
