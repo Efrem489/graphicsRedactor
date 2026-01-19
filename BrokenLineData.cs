@@ -1,7 +1,9 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Windows;           
-using System.Windows.Media;     
+using System.Windows.Media;
+using VectorEditor.Services;
+using VectorEditor.Shapes;
 
 namespace VectorEditor
 {
@@ -10,7 +12,7 @@ namespace VectorEditor
     /// Содержит коллекцию точек, толщину линии и цвет обводки.
     /// </summary>
     [Serializable]
-    public class BrokenLineData
+    public class BrokenLineData : IFigureData
     {
         /// <summary>
         /// Получает или задает коллекцию точек, определяющих ломаную линию.
@@ -28,5 +30,13 @@ namespace VectorEditor
         /// Значение по умолчанию: черный цвет.
         /// </summary>
         public Color StrokeColor { get; set; } = Colors.Black;
+
+        /// <summary>
+        /// Создает фигуру линии на основе данных
+        /// </summary>
+        public Shapes.Figure CreateFigure()
+        {
+            return new Line(this);
+        }
     }
 }
