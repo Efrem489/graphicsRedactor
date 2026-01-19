@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Media;
 using System.Windows.Shapes;
 using VectorEditor;
+using VectorEditor.Services;
 
 namespace VectorEditor.Shapes
 {
@@ -17,48 +18,35 @@ namespace VectorEditor.Shapes
         private readonly BrokenLineData _data;
         private readonly Polyline _polyline;
 
-        /// <inheritdoc />
         public override Shape Visual => _polyline;
-
-        /// <inheritdoc />
         public override double Thickness => _data.Thickness;
-
-        /// <inheritdoc />
         public override Color StrokeColor => _data.StrokeColor;
-
-        /// <summary>
-        /// Получает данные линии.
-        /// </summary>
-        public BrokenLineData Data => _data;
 
         /// <summary>
         /// Инициализирует новый экземпляр класса Line на основе данных.
         /// </summary>
-        /// <param name="data">Данные линии.</param>
         public Line(BrokenLineData data)
         {
             _data = data;
             _polyline = CreatePolyline();
         }
 
-        /// <inheritdoc />
         public override IReadOnlyList<Point> GetPoints() => _data.Points;
 
-        /// <inheritdoc />
+        public override IFigureData GetData() => _data;
+
         public override void SetThickness(double thickness)
         {
             _data.Thickness = thickness;
             _polyline.StrokeThickness = thickness;
         }
 
-        /// <inheritdoc />
         public override void SetColor(Color color)
         {
             _data.StrokeColor = color;
             _polyline.Stroke = new SolidColorBrush(color);
         }
 
-        /// <inheritdoc />
         public override void MovePoint(int pointIndex, Point newPosition)
         {
             if (pointIndex < 0 || pointIndex >= _data.Points.Count)
@@ -68,7 +56,6 @@ namespace VectorEditor.Shapes
             _polyline.Points[pointIndex] = newPosition;
         }
 
-        /// <inheritdoc />
         public override void MoveAll(Vector offset)
         {
             for (int i = 0; i < _data.Points.Count; i++)
@@ -79,7 +66,6 @@ namespace VectorEditor.Shapes
             }
         }
 
-        /// <inheritdoc />
         public override bool InsertPoint(Point clickPosition, double maxDistance = 10)
         {
             double minDistance = double.MaxValue;
@@ -111,7 +97,6 @@ namespace VectorEditor.Shapes
             return false;
         }
 
-        /// <inheritdoc />
         public override bool MatchesShape(Shape shape)
         {
             if (shape is not Polyline polyline)
@@ -120,10 +105,6 @@ namespace VectorEditor.Shapes
             return ReferenceEquals(_polyline, polyline) || _polyline.Points.SequenceEqual(polyline.Points);
         }
 
-        /// <summary>
-        /// Создает визуальный элемент Polyline на основе данных линии.
-        /// </summary>
-        /// <returns>Созданный визуальный элемент Polyline.</returns>
         private Polyline CreatePolyline()
         {
             return new Polyline
@@ -134,19 +115,12 @@ namespace VectorEditor.Shapes
             };
         }
 
-        /// <summary>
-        /// Проецирует точку на отрезок, находя ближайшую точку на отрезке к заданной точке.
-        /// </summary>
-        /// <param name="p">Точка для проецирования.</param>
-        /// <param name="a">Начальная точка отрезка.</param>
-        /// <param name="b">Конечная точка отрезка.</param>
-        /// <returns>Точка проекции на отрезке.</returns>
         private static Point ProjectPointOnSegment(Point p, Point a, Point b)
         {
             var ab = b - a;
             var ap = p - a;
             double projLength = Vector.Multiply(ab, ap) / ab.LengthSquared;
-            projLength = System.Math.Clamp(projLength, 0, 1);
+            projLength = Math.Clamp(projLength, 0, 1);
             return a + ab * projLength;
         }
     }
