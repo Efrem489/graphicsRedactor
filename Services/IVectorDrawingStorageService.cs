@@ -4,22 +4,19 @@ using VectorEditor;
 namespace VectorEditor.Services
 {
     /// <summary>
-    /// Определяет интерфейс для операций сохранения и загрузки данных векторного редактора с использованием диалоговых окон.
+    /// Определяет интерфейс для операций сохранения и загрузки данных векторного редактора.
     /// </summary>
     public interface IVectorDrawingStorageService
     {
         /// <summary>
-        /// Сохраняет коллекцию данных ломаных линий, открывая диалог выбора файла для сохранения.
+        /// Сохраняет коллекцию данных фигур.
         /// </summary>
-        /// <param name="data">Коллекция данных ломаных линий для сохранения.</param>
-        /// <returns>true, если сохранение выполнено успешно; иначе false.</returns>
-        bool Save(IEnumerable<BrokenLineData> data);
+        bool Save(IEnumerable<IFigureData> data);
 
         /// <summary>
-        /// Загружает коллекцию данных ломаных линий, открывая диалог выбора файла для загрузки.
+        /// Загружает коллекцию данных фигур.
         /// </summary>
-        /// <returns>Коллекция данных ломаных линий, загруженных из файла, или null, если операция была отменена.</returns>
-        List<BrokenLineData>? Load();
+        List<IFigureData>? Load();
     }
 }
 
